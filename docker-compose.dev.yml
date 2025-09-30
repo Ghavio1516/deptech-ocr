@@ -19,26 +19,26 @@ services:
       - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-20}
       - ENABLE_GPU=false
     volumes:
-      - "${APP_PATH:-./app}:/code/app"
-      - "${UPLOADS_PATH:-./uploads}:/uploads"
-      - "${LOGS_PATH:-./logs}:/logs"
-      - "${REQUIREMENTS_PATH:-./requirements.txt}:/code/requirements.txt"
+      # Use relative paths instead of environment variables
+      - "./app:/code/app"
+      - "./uploads:/uploads"
+      - "./logs:/logs"
+      - "./requirements.txt:/code/requirements.txt"
     working_dir: /code
     command: >
       bash -c "
       echo '🚀 Starting Deptech OCR Development Server...' &&
       echo '📦 Installing system dependencies...' &&
-      apt-get update &&
-      apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 curl &&
+      apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 curl &&
       rm -rf /var/lib/apt/lists/* &&
       echo '🔧 Upgrading pip...' &&
       pip install --upgrade pip &&
       echo '📚 Installing Python dependencies...' &&
       pip install -r requirements.txt &&
       echo '✅ All dependencies installed!' &&
-      echo '🌟 Starting FastAPI development server with auto-reload...' &&
+      echo '🌟 Starting FastAPI development server...' &&
       echo '🌐 API available at: http://localhost:2005' &&
-      echo '📖 API docs at: http://localhost:2005/docs' &&
+      echo '📖 Docs available at: http://localhost:2005/docs' &&
       fastapi dev app/main.py --port 8000 --host 0.0.0.0 --reload
       "
     restart: unless-stopped

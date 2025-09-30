@@ -1,6 +1,3 @@
-# docker-compose.prod.yml
-version: '3.8'
-
 services:
   deptech-ocr:
     build:
@@ -27,9 +24,9 @@ services:
       - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-100}
       - ENABLE_GPU=${ENABLE_GPU:-true}
     volumes:
-      - "${UPLOADS_PATH:-./uploads}:/uploads"
-      - "${LOGS_PATH:-./logs}:/logs"
-      # No app volume mount in production (code is in image)
+      # Use relative paths - no app volume in production (code is in image)
+      - "./uploads:/uploads"
+      - "./logs:/logs"
     deploy:
       resources:
         limits:

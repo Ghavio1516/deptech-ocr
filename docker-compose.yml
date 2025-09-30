@@ -24,10 +24,10 @@ services:
       - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-50}
       - ENABLE_GPU=${ENABLE_GPU:-false}
     volumes:
-      - "${APP_PATH}:${CONTAINER_APP_PATH}"
-      - "${UPLOADS_PATH}:${CONTAINER_UPLOADS_PATH}"
-      - "${LOGS_PATH}:${CONTAINER_LOGS_PATH}"
-      - "${REQUIREMENTS_PATH}:${CONTAINER_REQUIREMENTS_PATH}"
+      - "./app:/code/app"
+      - "./uploads:/uploads"
+      - "./logs:/logs"
+      - "./requirements.txt:/code/requirements.txt"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
