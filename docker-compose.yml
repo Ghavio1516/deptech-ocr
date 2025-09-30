@@ -1,0 +1,44 @@
+services:
+  deptech-ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - ENV=${ENV:-development}
+    image: ${PROJECT_NAME:-deptech-ocr}:latest
+    container_name: ${PROJECT_NAME:-deptech-ocr}
+    ports:
+      - "${API_PORT:-2005}:8000"
+    environment:
+      - TZ=${TZ:-Asia/Jakarta}
+      - ENV=${ENV:-development}
+      - PYTHONPATH=/code
+      - PYTHONUNBUFFERED=1
+      # OCR Configuration
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ch}
+      - DEFAULT_QUALITY=${DEFAULT_QUALITY:-high}
+      - DEFAULT_EXTRACTION_MODE=${DEFAULT_EXTRACTION_MODE:-hybrid}
+      - ENABLE_CLEANSING=${ENABLE_CLEANSING:-true}
+      # Performance
+      - OCR_CONFIDENCE_THRESHOLD=${OCR_CONFIDENCE_THRESHOLD:-0.5}
+      - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-50}
+      - ENABLE_GPU=${ENABLE_GPU:-false}
+    volumes:
+      - "${APP_PATH}:${CONTAINER_APP_PATH}"
+      - "${UPLOADS_PATH}:${CONTAINER_UPLOADS_PATH}"
+      - "${LOGS_PATH}:${CONTAINER_LOGS_PATH}"
+      - "${REQUIREMENTS_PATH}:${CONTAINER_REQUIREMENTS_PATH}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: ${HEALTH_CHECK_INTERVAL:-30s}
+      timeout: ${HEALTH_CHECK_TIMEOUT:-10s}
+      retries: ${HEALTH_CHECK_RETRIES:-3}
+      start_period: 120s
+    networks:
+      - deptech-network
+
+networks:
+  deptech-network:
+    driver: bridge
+    name: ${PROJECT_NAME:-deptech-ocr}_network

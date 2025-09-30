@@ -1,0 +1,54 @@
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  deptech-ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - ENV=production
+    image: deptech-ocr:prod-latest
+    container_name: deptech-ocr-prod
+    ports:
+      - "2005:8000"
+    environment:
+      - TZ=Asia/Jakarta
+      - ENV=production
+      - PYTHONPATH=/code
+      - PYTHONUNBUFFERED=1
+      - DEBUG=false
+      # OCR Configuration - Production optimized
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ch}
+      - DEFAULT_QUALITY=${DEFAULT_QUALITY:-high}
+      - DEFAULT_EXTRACTION_MODE=${DEFAULT_EXTRACTION_MODE:-hybrid}
+      - ENABLE_CLEANSING=${ENABLE_CLEANSING:-true}
+      - OCR_CONFIDENCE_THRESHOLD=${OCR_CONFIDENCE_THRESHOLD:-0.6}
+      - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-100}
+      - ENABLE_GPU=${ENABLE_GPU:-true}
+    volumes:
+      - "${UPLOADS_PATH:-./uploads}:/uploads"
+      - "${LOGS_PATH:-./logs}:/logs"
+      # No app volume mount in production (code is in image)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - deptech-network
+
+networks:
+  deptech-network:
+    driver: bridge
+    name: deptech-ocr-prod_network

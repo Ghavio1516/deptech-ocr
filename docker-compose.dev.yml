@@ -1,0 +1,57 @@
+services:
+  deptech-ocr:
+    image: python:3.10-slim
+    container_name: deptech-ocr-dev
+    ports:
+      - "2005:8000"
+    environment:
+      - TZ=Asia/Jakarta
+      - ENV=development
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/code
+      - DEBUG=true
+      # OCR Configuration - Dev optimized
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ch}
+      - DEFAULT_QUALITY=${DEFAULT_QUALITY:-balanced}
+      - DEFAULT_EXTRACTION_MODE=${DEFAULT_EXTRACTION_MODE:-hybrid}
+      - ENABLE_CLEANSING=${ENABLE_CLEANSING:-true}
+      - OCR_CONFIDENCE_THRESHOLD=${OCR_CONFIDENCE_THRESHOLD:-0.4}
+      - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-20}
+      - ENABLE_GPU=false
+    volumes:
+      - "${APP_PATH:-./app}:/code/app"
+      - "${UPLOADS_PATH:-./uploads}:/uploads"
+      - "${LOGS_PATH:-./logs}:/logs"
+      - "${REQUIREMENTS_PATH:-./requirements.txt}:/code/requirements.txt"
+    working_dir: /code
+    command: >
+      bash -c "
+      echo '🚀 Starting Deptech OCR Development Server...' &&
+      echo '📦 Installing system dependencies...' &&
+      apt-get update &&
+      apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 curl &&
+      rm -rf /var/lib/apt/lists/* &&
+      echo '🔧 Upgrading pip...' &&
+      pip install --upgrade pip &&
+      echo '📚 Installing Python dependencies...' &&
+      pip install -r requirements.txt &&
+      echo '✅ All dependencies installed!' &&
+      echo '🌟 Starting FastAPI development server with auto-reload...' &&
+      echo '🌐 API available at: http://localhost:2005' &&
+      echo '📖 API docs at: http://localhost:2005/docs' &&
+      fastapi dev app/main.py --port 8000 --host 0.0.0.0 --reload
+      "
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 2
+      start_period: 300s # 5 minutes for initial setup
+    networks:
+      - deptech-network
+
+networks:
+  deptech-network:
+    driver: bridge
+    name: deptech-ocr-dev_network
