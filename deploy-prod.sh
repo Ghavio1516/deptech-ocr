@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy-prod.sh - Production deployment script
+# deploy-prod.sh - Production deployment script (Fixed)
 
 set -e  # Exit on any error
 
@@ -29,32 +29,17 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if .env.prod exists
+# Get current directory
+CURRENT_DIR=$(pwd)
+print_status "Working directory: ${CURRENT_DIR}"
+
+# Create .env.prod if it doesn't exist
 if [ ! -f ".env.prod" ]; then
-    print_error ".env.prod file not found!"
-    echo ""
-    echo "Creating .env.prod from template..."
+    print_warning ".env.prod not found, creating it..."
     
-    # Get current directory
-    CURRENT_DIR=$(pwd)
-    
-    # Create .env.prod
-    cat > .env.prod << EOF
-# .env.prod - Production Environment (Auto-generated)
+    cat > .env.prod << 'EOF'
+# .env.prod - Production Environment
 PROJECT_NAME=deptech-ocr-prod
-PROJECT_BASE_PATH=${CURRENT_DIR}
-
-# Docker Volume Mappings
-APP_PATH=\${PROJECT_BASE_PATH}/app
-UPLOADS_PATH=\${PROJECT_BASE_PATH}/uploads
-LOGS_PATH=\${PROJECT_BASE_PATH}/logs
-REQUIREMENTS_PATH=\${PROJECT_BASE_PATH}/requirements.txt
-
-# Container Mappings
-CONTAINER_APP_PATH=/code/app
-CONTAINER_UPLOADS_PATH=/uploads
-CONTAINER_LOGS_PATH=/logs
-CONTAINER_REQUIREMENTS_PATH=/code/requirements.txt
 
 # API Configuration
 API_PORT=2005
@@ -75,7 +60,6 @@ ENABLE_GPU=true
 ENV=production
 TZ=Asia/Jakarta
 DEBUG=false
-AUTO_RELOAD=false
 
 # Health Check - Production settings
 HEALTH_CHECK_INTERVAL=30s
@@ -83,7 +67,7 @@ HEALTH_CHECK_TIMEOUT=10s
 HEALTH_CHECK_RETRIES=3
 EOF
     
-    print_success ".env.prod created with current path: ${CURRENT_DIR}"
+    print_success ".env.prod created"
 fi
 
 # Copy .env.prod to .env
@@ -94,7 +78,77 @@ print_success "Environment configured for production"
 # Create required directories
 print_status "Creating required directories..."
 mkdir -p app uploads logs
-print_success "Directories created"
+touch uploads/.gitkeep logs/.gitkeep
+
+# Ensure requirements.txt exists
+if [ ! -f "requirements.txt" ]; then
+    print_warning "requirements.txt not found, creating it..."
+    cat > requirements.txt << 'EOF'
+fastapi[standard]>=0.113.0,<0.114.0
+uvicorn>=0.30.0
+pydantic>=2.0.0
+pillow>=10.0.0
+paddlepaddle>=3.2.0
+paddleocr>=3.2.0
+opencv-python-headless>=4.10.0
+numpy>=1.21.0
+PyMuPDF>=1.23.0
+python-docx>=1.1.0
+python-dotenv>=1.0.0
+EOF
+fi
+
+# Ensure app/main.py exists
+if [ ! -f "app/main.py" ]; then
+    print_error "app/main.py not found!"
+    print_status "Please ensure your main.py file is in the app/ directory"
+    exit 1
+fi
+
+# Check if Dockerfile exists
+if [ ! -f "Dockerfile" ]; then
+    print_warning "Dockerfile not found, creating basic production Dockerfile..."
+    cat > Dockerfile << 'EOF'
+# Dockerfile for Production
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /code
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libgomp1 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt /code/requirements.txt
+
+# Upgrade pip and install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Copy application code
+COPY app/ /code/app/
+
+# Create uploads and logs directories
+RUN mkdir -p /uploads /logs
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["fastapi", "run", "app/main.py", "--port", "8000", "--host", "0.0.0.0"]
+EOF
+    
+    print_success "Dockerfile created"
+fi
+
+print_success "Directory structure verified"
 
 # Stop any existing containers
 print_status "Stopping existing containers..."
@@ -103,9 +157,10 @@ print_success "Existing containers stopped"
 
 # Build and start production environment
 print_status "Building and starting production containers..."
-print_warning "This may take several minutes..."
+print_warning "This may take several minutes on first build..."
 
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Use the fixed compose files
+docker compose -f docker-compose.prod.yml up -d --build
 
 # Wait for container to be ready
 print_status "Waiting for container to start..."
@@ -135,21 +190,36 @@ echo "🌐 Access URLs:"
 echo "   • API Endpoint: http://localhost:2005"
 echo "   • Health Check: http://localhost:2005/health"
 echo ""
-echo "🔧 Configuration:"
+echo "🔧 Production Configuration:"
 echo "   • Language: ch (optimized for Indonesian)"
 echo "   • Quality: high (maximum accuracy)"
-echo "   • GPU: enabled (if available)"
+echo "   • GPU: enabled (if hardware supports)"
+echo "   • Confidence: 0.6 (high accuracy threshold)"
+echo ""
+echo "📋 Management Commands:"
+echo "   • View logs: docker compose logs -f"
+echo "   • Restart: docker compose restart"
+echo "   • Stop: docker compose down"
+echo "   • Stats: docker compose stats"
 echo ""
 
 # Test API endpoint
-print_status "Testing API endpoint..."
-sleep 10
+print_status "Testing API endpoint in 30 seconds..."
+sleep 30
 
-if curl -s http://localhost:2005/health > /dev/null; then
+if curl -s http://localhost:2005/health > /dev/null 2>&1; then
     print_success "API is responding!"
     echo ""
-    echo "✅ Production deployment complete!"
+    echo "✅ Production deployment complete and ready!"
+    echo ""
+    print_status "Monitoring: docker compose logs -f"
 else
-    print_warning "API not responding yet - check logs"
-    echo "   Use: docker compose logs -f"
+    print_warning "API not responding yet - may still be initializing"
+    echo ""
+    echo "Check container status: docker compose ps"
+    echo "View logs: docker compose logs -f"
+    echo "Wait a few more minutes for initialization..."
 fi
+
+echo ""
+print_success "Production environment is running! 🚀"
