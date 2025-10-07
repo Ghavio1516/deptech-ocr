@@ -51,7 +51,7 @@ def get_ocr(lang='en'):
         try:
             ocr_instances[lang] = PaddleOCR(
                 lang=lang,
-                use_gpu=OCR_CONFIG['enable_gpu']
+                #use_gpu=OCR_CONFIG['enable_gpu']
             )
             print(f"PaddleOCR initialized successfully for {lang}!")
         except Exception as e:
@@ -300,42 +300,154 @@ def extract_docx_text_direct(docx_bytes: bytes) -> dict:
         }
 
 def extract_text_from_paddleocr_3x(result):
-    """Extract text from PaddleOCR 3.x result"""
+    """Extract text from PaddleOCR result - Enhanced error handling"""
     all_texts = []
     
     try:
-        if isinstance(result, list) and len(result) > 0:
-            page_result = result[0]
+        print(f"Processing OCR result type: {type(result)}")
+        
+        if result is None:
+            print("OCR result is None")
+            return all_texts
             
-            if isinstance(page_result, dict):
-                if 'rec_texts' in page_result:
-                    rec_texts = page_result['rec_texts']
-                    rec_scores = page_result.get('rec_scores', [])
+        if isinstance(result, list) and len(result) > 0:
+            for page_idx, page_result in enumerate(result):
+                if page_result is None:
+                    print(f"Page {page_idx} result is None")
+                    continue
                     
-                    if isinstance(rec_texts, list):
-                        for i, text in enumerate(rec_texts):
-                            if isinstance(text, str) and text.strip():
-                                confidence = rec_scores[i] if i < len(rec_scores) else 1.0
-                                # Use confidence threshold from environment
-                                if confidence >= OCR_CONFIG['confidence_threshold']:
-                                    cleaned_text = text.strip()
-                                    if len(cleaned_text) > 0:
-                                        all_texts.append(cleaned_text)
+                print(f"Page {page_idx} result type: {type(page_result)}")
                 
-                if not all_texts:
-                    for key in ['texts', 'text', 'results']:
-                        if key in page_result:
-                            data = page_result[key]
-                            if isinstance(data, list):
-                                for item in data:
-                                    if isinstance(item, str) and item.strip():
-                                        all_texts.append(item.strip())
-                            elif isinstance(data, str) and data.strip():
-                                all_texts.append(data.strip())
-    
+                # Handle list of detection results (standard format)
+                if isinstance(page_result, list):
+                    print(f"Processing list format with {len(page_result)} detections")
+                    for detection_idx, detection in enumerate(page_result):
+                        if isinstance(detection, list) and len(detection) >= 2:
+                            try:
+                                # Format: [[[x1, y1], [x2, y2], [x3, y3], [x4, y4]], ('text', confidence)]
+                                bbox = detection[0]  # Bounding box coordinates
+                                text_info = detection[1]  # Text and confidence
+                                
+                                if isinstance(text_info, tuple) and len(text_info) >= 2:
+                                    text = str(text_info[0]).strip()
+                                    confidence = float(text_info[1])
+                                elif isinstance(text_info, str):
+                                    text = str(text_info).strip()
+                                    confidence = 1.0
+                                else:
+                                    print(f"Unexpected text_info format: {type(text_info)}")
+                                    continue
+                                
+                                # Apply confidence threshold
+                                if confidence >= OCR_CONFIG['confidence_threshold'] and len(text) > 0:
+                                    all_texts.append(text)
+                                    print(f"✓ Extracted: '{text}' (confidence: {confidence:.3f})")
+                                else:
+                                    print(f"✗ Skipped: '{text}' (confidence: {confidence:.3f} < {OCR_CONFIG['confidence_threshold']})")
+                                
+                            except Exception as detection_error:
+                                print(f"Error processing detection {detection_idx}: {detection_error}")
+                                continue
+                
+                # Handle dictionary format (older versions or different OCR modes)
+                elif isinstance(page_result, dict):
+                    print("Processing dictionary format OCR result")
+                    
+                    # Method 1: Check for 'rec_texts' and 'rec_scores' keys (common in older versions)
+                    if 'rec_texts' in page_result:
+                        print("Found 'rec_texts' in dictionary")
+                        rec_texts = page_result['rec_texts']
+                        rec_scores = page_result.get('rec_scores', [])
+                        
+                        if isinstance(rec_texts, list):
+                            print(f"Processing {len(rec_texts)} rec_texts")
+                            for i, text in enumerate(rec_texts):
+                                if isinstance(text, str) and text.strip():
+                                    confidence = rec_scores[i] if i < len(rec_scores) else 1.0
+                                    text_clean = text.strip()
+                                    
+                                    if confidence >= OCR_CONFIG['confidence_threshold'] and len(text_clean) > 0:
+                                        all_texts.append(text_clean)
+                                        print(f"✓ Dictionary extracted: '{text_clean}' (confidence: {confidence:.3f})")
+                                    else:
+                                        print(f"✗ Dictionary skipped: '{text_clean}' (confidence: {confidence:.3f})")
+                    
+                    # Method 2: Check for other common dictionary keys
+                    if not all_texts:  # Only try other methods if rec_texts didn't work
+                        print("Trying alternative dictionary keys...")
+                        for key in ['texts', 'text', 'results', 'predictions', 'output']:
+                            if key in page_result:
+                                print(f"Found '{key}' in dictionary")
+                                data = page_result[key]
+                                
+                                if isinstance(data, list):
+                                    print(f"Processing list data with {len(data)} items")
+                                    for item in data:
+                                        if isinstance(item, str) and item.strip():
+                                            text_clean = item.strip()
+                                            if len(text_clean) > 0:
+                                                all_texts.append(text_clean)
+                                                print(f"✓ Alt key extracted: '{text_clean}'")
+                                        elif isinstance(item, dict):
+                                            # Handle nested dictionaries
+                                            for nested_key in ['text', 'content', 'value']:
+                                                if nested_key in item and isinstance(item[nested_key], str):
+                                                    text_clean = str(item[nested_key]).strip()
+                                                    if len(text_clean) > 0:
+                                                        all_texts.append(text_clean)
+                                                        print(f"✓ Nested extracted: '{text_clean}'")
+                                                    break
+                                
+                                elif isinstance(data, str) and data.strip():
+                                    text_clean = data.strip()
+                                    if len(text_clean) > 0:
+                                        all_texts.append(text_clean)
+                                        print(f"✓ String data extracted: '{text_clean}'")
+                                
+                                break  # Stop after finding first valid key
+                    
+                    # Method 3: If still no results, try to extract any text-like values
+                    if not all_texts:
+                        print("Trying deep extraction from dictionary...")
+                        def extract_text_recursive(obj, path=""):
+                            texts = []
+                            if isinstance(obj, str) and len(obj.strip()) > 0:
+                                texts.append(obj.strip())
+                            elif isinstance(obj, list):
+                                for i, item in enumerate(obj):
+                                    texts.extend(extract_text_recursive(item, f"{path}[{i}]"))
+                            elif isinstance(obj, dict):
+                                for key, value in obj.items():
+                                    if key in ['text', 'content', 'value', 'result', 'output']:
+                                        texts.extend(extract_text_recursive(value, f"{path}.{key}"))
+                            return texts
+                        
+                        deep_texts = extract_text_recursive(page_result)
+                        for text in deep_texts[:10]:  # Limit to prevent spam
+                            if len(text) > 2:  # Skip very short texts
+                                all_texts.append(text)
+                                print(f"✓ Deep extracted: '{text}'")
+                
+                else:
+                    print(f"Unexpected page result format: {type(page_result)}")
+                    # Try to convert to string if possible
+                    try:
+                        text_str = str(page_result).strip()
+                        if len(text_str) > 0 and text_str not in ['None', 'null', '[]', '{}']:
+                            all_texts.append(text_str)
+                            print(f"✓ Fallback extracted: '{text_str}'")
+                    except:
+                        pass
+                        
+        else:
+            print(f"Unexpected result format or empty: {type(result)}")
+            
     except Exception as e:
-        print(f"Error extracting text: {e}")
+        print(f"Error in extract_text_from_paddleocr_3x: {e}")
+        import traceback
+        traceback.print_exc()
     
+    print(f"Total extracted texts: {len(all_texts)}")
     return all_texts
 
 def extract_pdf_text_ocr(pdf_bytes: bytes, language: str, quality: str) -> dict:
@@ -523,106 +635,102 @@ async def extract_document_text(request: OCRRequest):
                 "quality_score": result.get("quality_score", 0)
             }
             
-        else:  # hybrid mode
-            # Intelligent hybrid extraction
+        else:  # hybrid mode - OCR-FIRST STRATEGY
+            # OCR-First hybrid extraction
             if file_type == 'pdf':
-                print("Running hybrid extraction...")
+                print("Running OCR-First hybrid extraction...")
                 
                 # Check if PDF is image-heavy
                 is_image_heavy = is_image_heavy_pdf(file_bytes)
                 
-                # Run both methods
-                direct_result = extract_pdf_text_direct(file_bytes)
+                # ALWAYS RUN OCR FIRST
+                print("Step 1: Running OCR extraction...")
                 ocr_result = extract_pdf_text_ocr(file_bytes, request.language, request.quality)
                 
-                # Smart selection logic
-                if not ocr_result["success"] and direct_result["success"]:
-                    # OCR failed, use direct
-                    raw_text = direct_result["text"]
-                    chosen_method = "direct"
-                    reason = "OCR failed, using direct extraction"
-                    
-                elif not direct_result["success"] and ocr_result["success"]:
-                    # Direct failed, use OCR
-                    raw_text = ocr_result["text"]
-                    chosen_method = "ocr"
-                    reason = "Direct extraction failed, using OCR"
-                    
-                elif not direct_result["success"] and not ocr_result["success"]:
-                    # Both failed
-                    raw_text = "[No text could be extracted]"
-                    chosen_method = "none"
-                    reason = "Both methods failed"
-                    
-                else:
-                    # Both succeeded - intelligent selection
-                    direct_score = direct_result["quality_score"]
+                # Run direct extraction as backup/supplement
+                print("Step 2: Running direct extraction for supplement...")
+                direct_result = extract_pdf_text_direct(file_bytes)
+                
+                # OCR-FIRST DECISION LOGIC
+                if ocr_result["success"] and len(ocr_result["text"].strip()) > 0:
+                    # OCR succeeded - use it as primary
                     ocr_score = ocr_result["quality_score"]
-                    similarity = SequenceMatcher(None, direct_result["text"], ocr_result["text"]).ratio()
+                    direct_score = direct_result["quality_score"] if direct_result["success"] else 0
                     
-                    print(f"Quality scores - Direct: {direct_score:.2f}, OCR: {ocr_score:.2f}, Similarity: {similarity:.2f}")
+                    print(f"OCR-First: OCR succeeded (quality: {ocr_score:.2f})")
                     
-                    if is_image_heavy and ocr_score >= 2.0:
-                        # Image-heavy PDF with decent OCR - prefer OCR
-                        raw_text = ocr_result["text"]
-                        chosen_method = "ocr"
-                        reason = f"Image-heavy PDF, OCR captures styled content (quality: {ocr_score:.2f})"
+                    if direct_result["success"] and len(direct_result["text"].strip()) > 0:
+                        # Both methods have content - compare and enhance
+                        similarity = SequenceMatcher(None, direct_result["text"], ocr_result["text"]).ratio()
+                        print(f"Similarity between OCR and Direct: {similarity:.2f}")
                         
-                    elif similarity > 0.8 and direct_score > ocr_score:
-                        # High similarity, direct is better quality
-                        raw_text = direct_result["text"]
-                        chosen_method = "direct"
-                        reason = f"High similarity ({similarity:.2f}), direct preferred"
-                        
-                    elif ocr_score > direct_score * 1.5:
-                        # OCR significantly better
-                        raw_text = ocr_result["text"]
-                        chosen_method = "ocr"
-                        reason = f"OCR much better quality ({ocr_score:.2f} vs {direct_score:.2f})"
-                        
-                    elif direct_score > ocr_score * 1.5:
-                        # Direct significantly better
-                        raw_text = direct_result["text"]
-                        chosen_method = "direct"
-                        reason = f"Direct much better quality ({direct_score:.2f} vs {ocr_score:.2f})"
-                        
-                    elif similarity < 0.4 and ocr_score > 1.5:
-                        # Low similarity suggests OCR found additional content
-                        raw_text = ocr_result["text"]
-                        chosen_method = "ocr"
-                        reason = f"Low similarity ({similarity:.2f}) suggests OCR found additional content"
-                        
-                    else:
-                        # Default to better quality
-                        if direct_score >= ocr_score:
-                            raw_text = direct_result["text"]
-                            chosen_method = "direct"
-                            reason = f"Direct chosen (quality: {direct_score:.2f} vs {ocr_score:.2f})"
+                        if similarity < 0.6:
+                            # Low similarity - OCR probably captured images/styled text that direct missed
+                            # Use OCR as primary, add direct as supplement for missing regular text
+                            direct_lines = set(line.strip() for line in direct_result["text"].split('\n') if line.strip() and len(line.strip()) > 3)
+                            ocr_lines = set(line.strip() for line in ocr_result["text"].split('\n') if line.strip() and len(line.strip()) > 3)
+                            
+                            # Find meaningful content only in direct extraction
+                            direct_only = direct_lines - ocr_lines
+                            meaningful_direct = [line for line in direct_only if len(line) > 10]  # Skip short fragments
+                            
+                            if meaningful_direct:
+                                raw_text = f"{ocr_result['text']}\n\n--- SUPPLEMENTAL TEXT (Direct) ---\n" + "\n".join(meaningful_direct)
+                                chosen_method = "ocr_enhanced"
+                                reason = f"OCR primary + direct supplement (similarity: {similarity:.2f}, added {len(meaningful_direct)} lines)"
+                            else:
+                                raw_text = ocr_result["text"]
+                                chosen_method = "ocr"
+                                reason = f"OCR complete (similarity: {similarity:.2f}, no meaningful direct supplement)"
                         else:
+                            # High similarity - OCR is comprehensive
                             raw_text = ocr_result["text"]
                             chosen_method = "ocr"
-                            reason = f"OCR chosen (quality: {ocr_score:.2f} vs {direct_score:.2f})"
+                            reason = f"OCR comprehensive (similarity: {similarity:.2f})"
+                    else:
+                        # Only OCR has content
+                        raw_text = ocr_result["text"]
+                        chosen_method = "ocr"
+                        reason = "OCR succeeded, direct extraction empty"
+                        
+                elif direct_result["success"] and len(direct_result["text"].strip()) > 0:
+                    # OCR failed but direct succeeded
+                    print("OCR-First: OCR failed, falling back to direct")
+                    raw_text = direct_result["text"]
+                    chosen_method = "direct_fallback"
+                    reason = "OCR failed, using direct extraction as fallback"
+                    
+                else:
+                    # Both failed
+                    print("OCR-First: Both methods failed")
+                    raw_text = "[No text could be extracted - both OCR and direct methods failed]"
+                    chosen_method = "none"
+                    reason = "Both OCR and direct extraction failed"
                 
                 processing_details = {
-                    "processing_method": f"Hybrid Extraction - {chosen_method.title()}",
+                    "processing_method": f"OCR-First Hybrid - {chosen_method.title().replace('_', ' ')}",
                     "extraction_mode": "hybrid",
+                    "strategy": "ocr_first",
                     "language": request.language,
                     "quality": request.quality,
                     "is_image_heavy": is_image_heavy,
                     "chosen_method": chosen_method,
                     "selection_reason": reason,
-                    "direct_quality": direct_result.get("quality_score", 0),
                     "ocr_quality": ocr_result.get("quality_score", 0),
+                    "direct_quality": direct_result.get("quality_score", 0),
+                    "ocr_success": ocr_result["success"],
+                    "direct_success": direct_result["success"],
                     "similarity": similarity if 'similarity' in locals() else 0
                 }
                 
             elif file_type == 'docx':
-                # DOCX - direct extraction
+                # DOCX - direct extraction (OCR not needed for structured docs)
                 result = extract_docx_text_direct(file_bytes)
                 raw_text = result["text"]
                 processing_details = {
                     "processing_method": "Direct DOCX Text Extraction",
                     "extraction_mode": "hybrid",
+                    "strategy": "direct_only",
                     "quality_score": result.get("quality_score", 0)
                 }
                 
